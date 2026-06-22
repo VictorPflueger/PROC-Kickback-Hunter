@@ -238,48 +238,58 @@ df_lfa1, df_ekko = generate_enterprise_sap_data()
 
 
 # ==============================================================================
-# HEADER & GLOBAL SEARCH BAR (Persists across all Tabs!)
+# HEADER & MASTER SEARCH BAR (The Single Source of Truth for all 4 Tabs)
 # ==============================================================================
 st.markdown("""
 <div class="frosted-glass" style="margin-bottom: 16px;">
     <h1 style="margin:0; font-size: 32px; font-weight: 800; letter-spacing: -1px;">
-        PROC Kickback Hunter AI <span style="color:#007AFF; font-size: 20px;">v4.2 Enterprise</span>
+        PROC Kickback Hunter AI <span style="color:#007AFF; font-size: 20px;">v4.5 Enterprise Engine</span>
     </h1>
     <p style="margin: 4px 0 0 0; color: #8E8E93; font-size: 15px;">
-        Agentic Multi-Hop Entity Resolution & Automated Spend Consolidation for SAP ECC / S/4HANA
+        Fully Reactive Entity Resolution across all Views — No hardcoded limits
     </p>
 </div>
 """, unsafe_allow_html=True)
 
-# ARCHITEKTUR-FIX: Globale Suchleiste über den Tabs platziert!
-global_search_query = st.text_input(
-    "🔍 GLOBALE KREDITOR- & ENTITÄTSSUCHE (Filtert in Echtzeit Tabellen, KI-Fokus & Audit-Berichte)...", 
+raw_search = st.text_input(
+    "🔍 GLOBALE KREDITOR- & ENTITÄTSSUCHE (Steuert in Echtzeit Tab 1, Tab 2, Tab 3 und Tab 4)...", 
     value="", 
-    placeholder="Tippe z.B. 'Cisco', 'Microsoft', '10004', 'Munich' oder 'Activision'..."
+    placeholder="Tippe z.B. 'Cisco', 'Microsoft', 'Nova', 'Munich' oder eine LIFNR..."
 ).strip()
 
-# Globale Filterung der Datensätze
-if global_search_query:
-    q_lower = global_search_query.lower()
-    mask_lfa1 = (
+
+# --- THE REACTIVE CORE: RESOLVING "df_focus" ---
+if raw_search:
+    q_lower = raw_search.lower()
+    mask = (
         df_lfa1["NAME1"].str.lower().str.contains(q_lower, na=False) |
         df_lfa1["ORT01"].str.lower().str.contains(q_lower, na=False) |
         df_lfa1["LIFNR"].str.lower().str.contains(q_lower, na=False)
     )
-    filtered_lfa1 = df_lfa1[mask_lfa1]
-    filtered_ekko = df_ekko[df_ekko["LIFNR"].isin(filtered_lfa1["LIFNR"].tolist())]
+    df_focus = df_lfa1[mask]
+    focus_title = f"Suchergebnis: „{raw_search}“"
 else:
-    filtered_lfa1 = df_lfa1
-    filtered_ekko = df_ekko
+    # Default Showcase Mode, wenn die Suchleiste leer ist
+    df_focus = df_lfa1[df_lfa1["LIFNR"].isin(["10001", "10002", "10003", "10004", "10005"])]
+    focus_title = "Cisco Systems Group (Default Showcase Cluster)"
 
-# Check helper für den dynamischen Scope
-is_cisco_in_search = not global_search_query or any(k in global_search_query.lower() for k in ["cisc", "bonn", "san jose", "meraki", "acacia", "splunk", "10001", "10002", "10003", "10004", "10005"])
-is_msft_in_search = not global_search_query or any(k in global_search_query.lower() for k in ["micr", "activ", "blizz", "20001", "20002"])
+# Mathematische Live-Auswertung des aktuellen df_focus
+focus_true_spend = df_focus["SPEND_YTD"].sum() if len(df_focus) > 0 else 0.0
+focus_silo_max = df_focus["SPEND_YTD"].max() if len(df_focus) > 0 else 0.0
+focus_delta = focus_true_spend - focus_silo_max
+
+THRESHOLD = 50000000.0
+is_qualified = focus_true_spend >= THRESHOLD
+focus_cashback = focus_true_spend * 0.02 if is_qualified else 0.0
+
+# Hilfslisten für dynamische Strings
+focus_names_list = df_focus["NAME1"].tolist()
+first_vendor_name = focus_names_list[0] if len(focus_names_list) > 0 else "Unbekannte Entität"
 
 
 # NAVIGATION TABS
 tab1, tab2, tab3, tab4 = st.tabs([
-    "🏛️ 1. SAP ERP Source Dump", 
+    "🏛️ 1. SAP ERP Dump", 
     "🧠 2. LangGraph Deep-Thought", 
     "💎 3. Financial Impact",
     "📈 4. Management Summary & E-Mail"
@@ -287,26 +297,30 @@ tab1, tab2, tab3, tab4 = st.tabs([
 
 
 # ==============================================================================
-# TAB 1: SOURCE DUMP
+# TAB 1: SOURCE DUMP (Reagiert live)
 # ==============================================================================
 with tab1:
-    st.markdown(f"<h3 style='margin-bottom:16px;'>In-Memory Subsystem Dump (Gefiltert: {len(filtered_lfa1)} Kreditoren)</h3>", unsafe_allow_html=True)
+    # In Tab 1 zeigen wir bei leerer Suche ALLE 150 an, bei aktiver Suche nur die Treffer
+    display_lfa1 = df_focus if raw_search else df_lfa1
+    display_ekko = df_ekko[df_ekko["LIFNR"].isin(display_lfa1["LIFNR"].tolist())]
+    
+    st.markdown(f"<h3 style='margin-bottom:16px;'>In-Memory Subsystem (Angezeigt: {len(display_lfa1)} Kreditoren)</h3>", unsafe_allow_html=True)
     col_lfa1, col_ekko = st.columns(2)
     
     with col_lfa1:
-        st.markdown(f"**Kreditorenstamm (`SAP.LFA1`)**")
-        st.dataframe(filtered_lfa1.style.format({"SPEND_YTD": "{:,.2f} €"}), use_container_width=True, height=450, hide_index=True)
+        st.markdown("**Kreditorenstamm (`SAP.LFA1`)**")
+        st.dataframe(display_lfa1.style.format({"SPEND_YTD": "{:,.2f} €"}), use_container_width=True, height=450, hide_index=True)
 
     with col_ekko:
-        st.markdown(f"**Bestellbelege YTD (`SAP.EKKO`)** — Zugehörige Einzelbelege")
-        st.dataframe(filtered_ekko.style.format({"NETWR": "{:,.2f} €"}), use_container_width=True, height=450, hide_index=True)
+        st.markdown("**Bestellbelege YTD (`SAP.EKKO`)**")
+        st.dataframe(display_ekko.style.format({"NETWR": "{:,.2f} €"}), use_container_width=True, height=450, hide_index=True)
 
 
 # ==============================================================================
-# TAB 2: LANGGRAPH DEEP-THOUGHT ORCHESTRATOR
+# TAB 2: LANGGRAPH DEEP-THOUGHT ORCHESTRATOR (Reagiert dynamisch auf Namen!)
 # ==============================================================================
 def render_pipeline_badges(active_step):
-    steps = [("🕵️‍♂️", "1. ERP Ingestion"), ("🧬", "2. Fuzzy Matcher"), ("🌐", "3. Web Graph"), ("⚖️", "4. Legal RAG"), ("🧮", "5. Math Core")]
+    steps = [("🕵️‍♂️", "1. ERP Ingest"), ("🧬", "2. Fuzzy Match"), ("🌐", "3. Web Graph"), ("⚖️", "4. Legal RAG"), ("🧮", "5. Math Core")]
     html = '<div class="pipeline-track">'
     for idx, (icon, label) in enumerate(steps, 1):
         status = "active" if active_step == idx else ("done" if active_step > idx else "")
@@ -314,15 +328,15 @@ def render_pipeline_badges(active_step):
     return html + '</div>'
 
 with tab2:
-    st.markdown("<h3>Agentic Execution Pipeline (Choreografiert auf exakt 30.0s)</h3>", unsafe_allow_html=True)
+    st.markdown(f"<h3>Agentic Scan Target: <span style='color:#007AFF;'>{focus_title}</span> (30.0s Choreografie)</h3>", unsafe_allow_html=True)
     
     badge_container = st.empty()
     terminal_container = st.empty()
     
     badge_container.markdown(render_pipeline_badges(0), unsafe_allow_html=True)
-    terminal_container.markdown('<div class="apple-terminal"><span class="terminal-time">[00:00.0]</span> <span class="terminal-source">[SYSTEM]</span> Ready. Set global filter above and click execute...</div>', unsafe_allow_html=True)
+    terminal_container.markdown(f'<div class="apple-terminal"><span class="terminal-time">[00:00.0]</span> <span class="terminal-source">[SYSTEM]</span> Bereit für Deep-Scan von {len(df_focus)} Entitäten...</div>', unsafe_allow_html=True)
 
-    if st.button("🚀 EXECUTE LANGGRAPH VENDOR DEEP-SCAN", type="primary"):
+    if st.button("🚀 EXECUTE DYNAMIC VENDOR DEEP-SCAN", type="primary"):
         log_text = ""
         def push_term(t_str, src="LANGGRAPH", time_code="00:00"):
             global log_text
@@ -331,207 +345,174 @@ with tab2:
 
         # Phase 1
         badge_container.markdown(render_pipeline_badges(1), unsafe_allow_html=True)
-        if global_search_query:
-            push_term(f"Globaler Filter aktiv ➔ Fokussiere Graph-Traversierung auf Entitäts-Query: '<b>{global_search_query}</b>'", "ORCHESTRATOR", "00:01")
-        push_term("Alloziere SAP In-Memory Vektorraum für Belegstrukturen...", "ERP-INGEST", "00:02")
+        push_term(f"Lese {len(df_focus)} verknüpfte Kreditorenkonten per RFC-BAPI in In-Memory Vektorraum...", "ERP-INGEST", "00:01")
         time.sleep(3.0)
-        push_term("Initial-Salden aus SAP FI-AP erfolgreich extrahiert.", "ERP-INGEST", "00:05")
+        push_term(f"Fokussiere Graphen-Traversierung auf Entität: '<b>{first_vendor_name}</b>' und zugehörige Schlüssel.", "ERP-INGEST", "00:04")
+        time.sleep(2.0)
 
         # Phase 2
         badge_container.markdown(render_pipeline_badges(2), unsafe_allow_html=True)
-        push_term("Überführe Stammdaten in n-dimensionale Levenshtein-Vektoren...", "FUZZY-SPACE", "00:07")
+        push_term("Fuzzy-Space: Transformiere Adress- & Namensfelder in Levenshtein-Matrizen...", "FUZZY-CORE", "00:07")
         time.sleep(3.0)
-        if is_cisco_in_search: push_term("Hohe Namensähnlichkeit: 'Cisco Systems Germany' & 'Cisco Technology Inc.' (Score: 0.94)", "FUZZY-SPACE", "00:10")
-        elif is_msft_in_search: push_term("Steuer-ID Cluster erkannt: Microsoft Deutschland & Activision Blizzard (Mutter-Tochter Verbund)", "FUZZY-SPACE", "00:10")
-        else: push_term(f"Scanne Einheiten für Suchbegriff '{global_search_query}'...", "FUZZY-SPACE", "00:10")
+        if len(focus_names_list) > 1:
+            push_term(f"Semantische Nähe entdeckt zwischen '{first_vendor_name}' und '{focus_names_list[1]}'.", "FUZZY-CORE", "00:10")
+        else:
+            push_term(f"Einzel-Entität '{first_vendor_name}' verifiziert. Prüfe auf versteckte Tochtergesellschaften...", "FUZZY-CORE", "00:10")
         time.sleep(1.0)
 
         # Phase 3
         badge_container.markdown(render_pipeline_badges(3), unsafe_allow_html=True)
-        push_term("Frage globale SEC-Filings & Handelsregister via OSINT-Agent ab...", "OSINT-CRAWL", "00:12")
+        push_term("Frage globale Handelsregister & SEC-Filings (Form 10-K) via OSINT-Agent ab...", "WEB-GRAPH", "00:12")
         time.sleep(3.0)
-        if is_cisco_in_search:
-            push_term("Verifiziere 10-K Filing: Cisco Systems kaufte Acacia ($4.5B) & Splunk ($28B).", "OSINT-CRAWL", "00:15")
-        if is_msft_in_search:
-            push_term("Verifiziere SEC Filing: Microsoft schließt Akquisition von Activision Blizzard ab.", "OSINT-CRAWL", "00:16")
-        time.sleep(2.0)
+        push_term(f"Graph-Synthese: Bestätige wirtschaftliche Zugehörigkeit von {len(df_focus)} Datensätzen zum Cluster '{focus_title}'.", "WEB-GRAPH", "00:15")
+        time.sleep(3.0)
 
         # Phase 4
         badge_container.markdown(render_pipeline_badges(4), unsafe_allow_html=True)
-        push_term("Vektorisiere hinterlegte PDF-Rahmenverträge der GlobalCorp SE...", "LEGAL-RAG", "00:19")
+        push_term("Vektorisiere hinterlegte PDF-Rahmenverträge der Einkaufsorganisation...", "LEGAL-RAG", "00:19")
         time.sleep(3.0)
-        push_term("<i style='color:#fff;'>Extrahierte Klausel: '2.0% Kickback ab einem kumulierten Gruppen-Bestellwert von exakt 50.000.000,00 €.'</i>", "LEGAL-RAG", "00:23")
+        push_term("<i style='color:#fff;'>Extrahierte Klausel: '2.0% Kickback auf den konsolidierten Gesamtumsatz ab exakt 50.000.000,00 € Spend.'</i>", "LEGAL-RAG", "00:23")
         time.sleep(1.0)
 
         # Phase 5
         badge_container.markdown(render_pipeline_badges(5), unsafe_allow_html=True)
-        push_term("Übergebe Sub-Graphen an deterministische SymPy-Engine...", "MATH-CORE", "00:25")
+        push_term(f"Übergebe Spend-Vektor an SymPy... Berechne True Spend: {fmt_curr(focus_true_spend)}", "MATH-ENGINE", "00:25")
         time.sleep(2.0)
         
-        if is_cisco_in_search:
-            push_term("Prüfe Cisco Cluster: Summe = 52.400.000,00 € ➔ > 50.0M? <b>TRUE</b> (Cashback verifiziert!)", "MATH-CORE", "00:27")
-        if is_msft_in_search:
-            push_term("Prüfe Microsoft Cluster: Summe = 47.000.000,00 € ➔ > 50.0M? <b style='color:#FF453A;'>FALSE</b> (Kein Cashback)", "MATH-CORE", "00:28")
+        hit_label = "<b>TRUE</b> (Anspruch verifiziert!)" if is_qualified else "<b style='color:#FF453A;'>FALSE</b> (Schwelle nicht erreicht)"
+        push_term(f"Prüfe Bedingung ({fmt_curr(focus_true_spend)} >= 50.0M €) ➔ {hit_label}", "MATH-ENGINE", "00:27")
+        time.sleep(2.0)
         
-        if not is_cisco_in_search and not is_msft_in_search:
-            c_sum = filtered_lfa1["SPEND_YTD"].sum()
-            hit = c_sum >= 50000000
-            col = "#30D158" if hit else "#FF453A"
-            push_term(f"Prüfe Custom-Query '{global_search_query}': Summe = {fmt_curr(c_sum)} ➔ > 50.0M? <b style='color:{col};'>{hit}</b>", "MATH-CORE", "00:29")
-
-        time.sleep(1.0)
-        push_term("Generiere RFC/BAPI-Payload für FI-CA Buchung... Done.", "MATH-CORE", "00:30")
+        if is_qualified:
+            push_term(f"Erzeuge BAPI-Payload für Debitorenbuchung über {fmt_curr(focus_cashback)}... Done.", "SYSTEM", "00:30")
+        else:
+            push_term("Audit beendet. Keine Rückvergütung ableitbar. Keine Buchung ausgelöst.", "SYSTEM", "00:30")
         
         badge_container.markdown(render_pipeline_badges(6), unsafe_allow_html=True)
-        st.balloons()
-        st.success("✅ **DEEP-SCAN ABGESCHLOSSEN.** Bitte wechseln Sie in Reiter 3 oder 4 für das Management-Briefing.")
+        st.balloons() if is_qualified else None
+        st.success(f"✅ **SCAN ABGESCHLOSSEN.** Ergebnis für {focus_title} gesichert.")
 
 
 # ==============================================================================
-# TAB 3: FINANCIAL IMPACT (Dynamisch gesteuert durch Suchleiste!)
+# TAB 3: FINANCIAL IMPACT (100% Live berechnet aus df_focus!)
 # ==============================================================================
 with tab3:
-    st.markdown("<h3>Executive Financial Summary & Audit-Nachweise</h3>", unsafe_allow_html=True)
+    st.markdown("<h3>Executive Financial Impact & Entity Card</h3>", unsafe_allow_html=True)
     
-    kcol1, kcol2, kcol3, kcol4 = st.columns(4)
-    with kcol1: st.metric("Silo SQL-Skript Kickback", "0,00 €", "Standard SAP Report")
-    with kcol2: st.metric("Konsolidierter Cisco Spend", "52.400.000,00 €", "+2.4M € über Schwelle")
-    with kcol3: st.metric("Identifizierter Cashback", "1.048.000,00 €", "2.0% vertraglicher Kickback")
-    with kcol4: st.metric("EBITDA Impact YTD", "+ 1.048.000 €", "Sofort wirksam", delta_color="normal")
+    # 100% Dynamische KPIs! Nichts ist mehr fest einprogrammiert!
+    k1, k2, k3, k4 = st.columns(4)
+    with k1: st.metric("Max. SAP-Einzelsilo", fmt_curr(focus_silo_max), "Größter Kreditor im Silo")
+    with k2: st.metric("AI Konsolidierter Spend", fmt_curr(focus_true_spend), f"+{fmt_curr(focus_delta)} durch AI")
+    
+    stat_lbl = "QUALIFIZIERT (2%)" if is_qualified else "NICHT ERREICHT"
+    stat_col = "normal" if is_qualified else "off"
+    with k3: st.metric("Vertrags-Kickback Status", stat_lbl, "Schwelle: 50.0M €", delta_color=stat_col)
+    with k4: st.metric("EBITDA Cashback", fmt_curr(focus_cashback), "Sofort wirksam")
 
     st.markdown("<hr style='border-color: rgba(255,255,255,0.08); margin: 24px 0;'>", unsafe_allow_html=True)
 
-    # Dynamische Darstellung der Boxen basierend auf der Suche
-    rendered_boxes = 0
-    cols = st.columns(2)
+    # Die eine, perfekt angepasste Audit-Karte
+    card_border = "#30D158" if is_qualified else "#FF453A"
+    card_bg = "rgba(48, 209, 88, 0.05)" if is_qualified else "rgba(255, 69, 58, 0.05)"
+    badge_icon = "🟢" if is_qualified else "🔴"
+    verdict_text = f"<b style='color:#30D158;'>Erfolg:</b> Spend übersteigt 50M-Schwelle. Anspruch auf <b>{fmt_curr(focus_cashback)}</b> verifiziert." if is_qualified else f"<b style='color:#FF453A;'>Abgelehnt:</b> Der konsolidierte Umsatz von {fmt_curr(focus_true_spend)} verfehlt die vertragliche 50M-Schwelle."
 
-    if is_cisco_in_search:
-        with cols[rendered_boxes % 2]:
-            st.markdown("""
-            <div class="frosted-glass">
-                <h4 style="margin-top:0; color: #007AFF;">🟢 ENTITY CLUSTER #1: Cisco Systems Group</h4>
-                <p style="color:#8E8E93; font-size: 13px;">Durch Multi-Hop Reasoning konsolidierte SAP-Kreditoren</p>
-            </div>
-            """, unsafe_allow_html=True)
-            cisco_df = df_lfa1[df_lfa1["LIFNR"].isin(["10001", "10002", "10003", "10004", "10005"])]
-            st.dataframe(cisco_df[["LIFNR", "NAME1", "ORT01", "SPEND_YTD"]].style.format({"SPEND_YTD": "{:,.2f} €"}), use_container_width=True, hide_index=True)
-            st.markdown('<div style="background: rgba(48, 209, 88, 0.1); border: 1px solid #30D158; padding: 12px; border-radius: 10px; margin-top: 12px;"><b style="color:#30D158;">Ergebnis:</b> 52,40 Mio. € Spend > 50,00 Mio. € Schwelle ➔ <b>Anspruch auf 1.048.000,00 € Rückvergütung verifiziert.</b></div>', unsafe_allow_html=True)
-        rendered_boxes += 1
+    st.markdown(f"""
+    <div class="frosted-glass" style="border-color: {card_border} !important; background: {card_bg} !important;">
+        <h4 style="margin-top:0; color: #FFFFFF;">{badge_icon} AUDIT REPORT: {focus_title}</h4>
+        <p style="color:#8E8E93; font-size: 14px;">Die KI hat die untenstehenden {len(df_focus)} SAP-Kreditorenkonten als wirtschaftliche Entität zusammengefasst.</p>
+        <div style="background: rgba(0,0,0,0.3); padding: 12px; border-radius: 8px; margin-top: 12px; font-size: 14px;">
+            {verdict_text}
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
-    if is_msft_in_search:
-        with cols[rendered_boxes % 2]:
-            st.markdown("""
-            <div class="frosted-glass">
-                <h4 style="margin-top:0; color: #FF453A;">🛡️ AUDITOR PROOF: Die Microsoft M&A-Falle</h4>
-                <p style="color:#8E8E93; font-size: 13px;">Beweis der mathematischen und logischen Integrität der KI</p>
-            </div>
-            """, unsafe_allow_html=True)
-            msft_df = df_lfa1[df_lfa1["LIFNR"].isin(["20001", "20002"])]
-            st.dataframe(msft_df[["LIFNR", "NAME1", "ORT01", "SPEND_YTD"]].style.format({"SPEND_YTD": "{:,.2f} €"}), use_container_width=True, hide_index=True)
-            st.markdown('<div style="background: rgba(255, 69, 58, 0.1); border: 1px solid #FF453A; padding: 12px; border-radius: 10px; margin-top: 12px; font-size: 14px;"><b style="color:#FF453A;">Audit-Logik intakt:</b> Die Agentic AI hat Activision korrekt zu Microsoft konsolidiert (Spend: <b>47,00 Mio. €</b>). Da die 50M-Schwelle verfehlt wurde, hat die KI <b>keinen falschen Anspruch</b> ausgelöst.</div>', unsafe_allow_html=True)
-        rendered_boxes += 1
+    st.markdown("<div style='margin-top: 16px;'></div>", unsafe_allow_html=True)
+    st.dataframe(df_focus[["LIFNR", "NAME1", "ORT01", "LAND1", "SPEND_YTD"]].style.format({"SPEND_YTD": "{:,.2f} €"}), use_container_width=True, hide_index=True)
 
-    # Falls der User nach einem Custom-Lieferanten gesucht hat, der weder Cisco noch MSFT ist:
-    if not is_cisco_in_search and not is_msft_in_search and len(filtered_lfa1) > 0:
-        with cols[0]:
-            st.markdown(f"""
-            <div class="frosted-glass">
-                <h4 style="margin-top:0; color: #F5C211;">🟡 CUSTOM SEARCH TARGET: "{global_search_query}"</h4>
-                <p style="color:#8E8E93; font-size: 13px;">Gefilterte Entitäten aus dem SAP-Bestand</p>
-            </div>
-            """, unsafe_allow_html=True)
-            st.dataframe(filtered_lfa1[["LIFNR", "NAME1", "ORT01", "SPEND_YTD"]].style.format({"SPEND_YTD": "{:,.2f} €"}), use_container_width=True, hide_index=True)
-            
-            c_spend = filtered_lfa1["SPEND_YTD"].sum()
-            if c_spend >= 50000000:
-                st.markdown(f'<div style="background: rgba(48, 209, 88, 0.1); border: 1px solid #30D158; padding: 12px; border-radius: 10px; margin-top: 12px;"><b style="color:#30D158;">Erfolg!</b> Kumulierter Spend ({fmt_curr(c_spend)}) überschreitet 50M-Schwelle. Kickback-Anspruch: <b>{fmt_curr(c_spend*0.02)}</b>.</div>', unsafe_allow_html=True)
-            else:
-                st.markdown(f'<div style="background: rgba(255, 159, 10, 0.1); border: 1px solid #FF9F0A; padding: 12px; border-radius: 10px; margin-top: 12px;"><b style="color:#FF9F0A;">Hinweis:</b> Kumulierter Spend liegt bei <b>{fmt_curr(c_spend)}</b> und damit unter der vertraglichen 50.0M € Kickback-Schwelle.</div>', unsafe_allow_html=True)
-
-    st.markdown("<div style='margin-top: 32px;'></div>", unsafe_allow_html=True)
-    if st.button("⚡ BAPI: Debitoren-Sollstellung im SAP FI-CA erzeugen (Transaktion FB01)", type="primary"):
-        st.toast("BAPI_ACC_DOCUMENT_POST erfolgreich an SAP S/4HANA abgesetzt!", icon="🚀")
-        st.success("Buchungsbeleg **#109482001** (Debitor Cisco Systems an Erlöse aus Rückvergütungen: 1.048.000,00 €) im SAP erzeugt.")
+    if is_qualified:
+        st.markdown("<div style='margin-top: 24px;'></div>", unsafe_allow_html=True)
+        if st.button(f"⚡ BAPI: Debitoren-Sollstellung über {fmt_curr(focus_cashback)} im SAP buchen (FB01)", type="primary"):
+            st.toast("BAPI_ACC_DOCUMENT_POST erfolgreich abgesetzt!", icon="🚀")
+            st.success(f"Buchungsbeleg **#109482001** (Debitor an Erlöse aus Rückvergütungen: {fmt_curr(focus_cashback)}) im SAP S/4HANA erzeugt.")
 
 
 # ==============================================================================
-# TAB 4: EPIC 4 - MANAGEMENT SUMMARY, PLOTLY CHART & EXECUTIVE EMAIL
+# TAB 4: MANAGEMENT SUMMARY CHART & AUTOMATED EMAIL DISPATCHER
 # ==============================================================================
 with tab4:
-    st.markdown("<h3>Executive Board Visualizer & E-Mail Dispatcher</h3>", unsafe_allow_html=True)
+    st.markdown("<h3>Executive Board Visualizer & Automated Dispatch</h3>", unsafe_allow_html=True)
     
     col_graph, col_mail = st.columns([1.1, 0.9])
 
     with col_graph:
-        st.markdown("**Spend-Konsolidierung vs. Kickback-Schwellenwert**")
+        st.markdown(f"**Spend-Konsolidierung: {focus_title}**")
         
         fig = go.Figure()
 
-        # Bar 1: Silo
+        # Balken 1: Das alte SAP Silo
         fig.add_trace(go.Bar(
-            name="SAP Einzelsilo (Max)", x=["Cisco Group", "Microsoft Group"], y=[18200000, 41000000],
-            marker_color="#3A3A3C", text=["18.2M € (Bonn)", "41.0M € (München)"], textposition="auto"
+            name="Max. SAP Einzelsilo", x=[focus_title], y=[focus_silo_max],
+            marker_color="#3A3A3C", text=[fmt_curr(focus_silo_max)], textposition="auto"
         ))
         
-        # Bar 2: Consolidated
+        # Balken 2: Die Wahrheit durch die KI
+        bar_color = "#30D158" if is_qualified else "#FF453A"
         fig.add_trace(go.Bar(
-            name="AI Konsolidiert (True Spend)", x=["Cisco Group", "Microsoft Group"], y=[52400000, 47000000],
-            marker_color=["#30D158", "#FF453A"], text=["52.4M € (HIT!)", "47.0M € (No Hit)"], textposition="outside"
+            name="AI Konsolidiert (True Spend)", x=[focus_title], y=[focus_true_spend],
+            marker_color=bar_color, text=[fmt_curr(focus_true_spend)], textposition="outside"
         ))
 
-        # 50M Threshold Line
         fig.add_hline(
-            y=50000000, line_dash="dash", line_color="#007AFF",
-            annotation_text="Vertragliche Kickback-Schwelle (50.0 Mio. €)", 
+            y=THRESHOLD, line_dash="dash", line_color="#007AFF",
+            annotation_text="Kickback-Schwelle (50.0 Mio. €)", 
             annotation_position="top left", annotation_font_color="#007AFF"
         )
 
+        y_max_scale = max(focus_true_spend * 1.25, 55000000.0)
+
         fig.update_layout(
             barmode='group', plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-            font=dict(color="#F5F5F7"), margin=dict(l=10, r=10, t=30, b=10), height=400,
+            font=dict(color="#F5F5F7"), margin=dict(l=10, r=10, t=30, b=10), height=420,
             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-            yaxis=dict(title="Spend YTD in €", gridcolor="#1C1C1E", zerolinecolor="#1C1C1E")
+            yaxis=dict(title="Spend YTD in €", gridcolor="#1C1C1E", zerolinecolor="#1C1C1E", range=[0, y_max_scale])
         )
         st.plotly_chart(fig, use_container_width=True)
-        st.info("💡 **CFO Takeaway:** Ohne AI-Konsolidierung (graue Balken) entgehen GlobalCorp jährlich Millionenbeträge, da kein Einzellieferant die 50M-Linie durchbricht.")
 
     with col_mail:
-        st.markdown("**Automatisierter E-Mail-Entwurf (C-Level Dispatch)**")
+        st.markdown("**Automatisierter C-Level Dispatch (E-Mail)**")
         
-        target_entity_name = global_search_query if global_search_query else "Cisco Systems & Microsoft"
+        # Kreditorenliste formatiert für die Mail
+        mail_vendors = "".join([f"• {row['LIFNR']}: {row['NAME1']} ({row['ORT01']}) — {fmt_curr(row['SPEND_YTD'])}<br>" for _, row in df_focus.iterrows()])
         
-        mail_body = f"""
-        <div class="apple-mail-box">
-            <div class="mail-row"><b>VON:</b> <span class="val">AI.ProcurementOrchestrator@globalcorp.com</span></div>
-            <div class="mail-row"><b>AN:</b> <span class="val">Dr. Henrik von Bohlen (CFO)</span></div>
-            <div class="mail-row"><b>CC:</b> <span class="val">Marcus Thorne (Global Head of Procurement)</span></div>
-            <div class="mail-row" style="margin-top: 10px; color:#007AFF;"><b>BETREFF: [STRICTLY CONFIDENTIAL] AI Audit Q2/2026 — 1.048.000 € Rückvergütung gesichert</b></div>
-            
-            <div class="mail-divider"></div>
-            
-            <div style="font-size: 13.5px; line-height: 1.6; color: #D1D1D6;">
-                Sehr geehrter Herr Dr. von Bohlen,<br><br>
-                unsere autonome Agentic AI hat den globalen SAP-Lieferantenstamm unter Fokus auf die Suchmaske <b>„{target_entity_name}“</b> auditiert. 
-                Durch Multi-Hop Entity Resolution wurden folgende historische M&A-Fragmente rechtssicher konsolidiert:<br><br>
-                
-                <b style="color:#30D158;">1. VERIFIZIERTER CASHBACK: Cisco Systems Group</b><br>
-                • Fragmentierte SAP-Töchter: <i>Bonn, San Jose, London (Meraki), Maynard (Acacia), München (Splunk)</i><br>
-                • Kumulierter True-Spend: <b>52.400.000,00 €</b> (Höchstes Einzelsilo lag bei nur 18.2M €)<br>
-                • Vertrag: <i>Klausel 8.2 (CTR-2024-CISC)</i> ➔ Schwellenwert (50.0M €) überschritten.<br>
-                • <b>Gesicherter Cash-Return: + 1.048.000,00 €</b> (BAPI-Sollstellung in Vorbereitung)<br><br>
+        if is_qualified:
+            m_subj = f"[CASHBACK SECURED] +{fmt_curr(focus_cashback)} für {focus_title}"
+            m_body_stat = f"<span style='color:#30D158;'><b>ANSPRUCH BESTÄTIGT:</b> Der konsolidierte True-Spend von {fmt_curr(focus_true_spend)} überschreitet die 50M-Vertragsschwelle. Wir buchen {fmt_curr(focus_cashback)} als Ertrag ein.</span>"
+        else:
+            m_subj = f"[AUDIT REPORT] Compliance-Prüfung für {focus_title}"
+            m_body_stat = f"<span style='color:#FF453A;'><b>KEIN ANSPRUCH:</b> Der konsolidierte True-Spend von {fmt_curr(focus_true_spend)} liegt unter der 50M-Vertragsschwelle. Logik-Integrität intakt.</span>"
 
-                <b style="color:#FF453A;">2. COMPLIANCE NACHWEIS: Microsoft / Activision Blizzard</b><br>
-                • Kumulierter True-Spend: <b>47.000.000,00 €</b> ➔ Schwellenwert (50.0M €) exakt verfehlt.<br>
-                • Prädikat: Logik-Integrität intakt (Keine falsche Cashback-Forderung ausgelöst).<br><br>
-                
-                Mit freundlichen Grüßen<br>
-                <b>PROC Kickback Hunter AI</b> (v4.2 Enterprise Core)
+        mail_html = f"""
+        <div class="apple-mail-box">
+            <div class="mail-row"><b>VON:</b> <span class="val">AI.Orchestrator@globalcorp.com</span></div>
+            <div class="mail-row"><b>AN:</b> <span class="val">Dr. Henrik von Bohlen (CFO)</span></div>
+            <div class="mail-row" style="margin-top: 8px; color:#007AFF;"><b>BETREFF: {m_subj}</b></div>
+            <div class="mail-divider"></div>
+            <div style="font-size: 13px; line-height: 1.6; color: #D1D1D6;">
+                Sehr geehrter Herr Dr. von Bohlen,<br><br>
+                unsere Agentic AI hat den Scan für <b>„{focus_title}“</b> abgeschlossen. 
+                Folgende SAP-Einzelsilos wurden erfolgreich konsolidiert:<br><br>
+                {mail_vendors}<br>
+                <b>Konsolidierter True-Spend: {fmt_curr(focus_true_spend)}</b> (Maximales Einzelsilo lag bei nur {fmt_curr(focus_silo_max)})<br><br>
+                <b>FAZIT DER PRÜFUNG:</b><br>
+                {m_body_stat}<br><br>
+                Mit besten Grüßen,<br><b>PROC Kickback Hunter AI</b>
             </div>
         </div>
         """
-        st.markdown(mail_body, unsafe_allow_html=True)
-        
-        st.markdown("<div style='margin-top: 16px;'></div>", unsafe_allow_html=True)
-        if st.button("✉️ E-Mail sofort über internes SMTP-Relay versenden", type="primary"):
-            st.balloons()
-            st.success("TLS-Handshake erfolgreich: E-Mail wurde kryptografisch signiert und an **cfo@globalcorp.com** zugestellt.")
+        st.markdown(mail_html, unsafe_allow_html=True)
+
+        st.markdown("<div style='margin-top: 12px;'></div>", unsafe_allow_html=True)
+        if st.button("✉️ E-Mail sofort über internes Relay an CFO versenden", type="primary"):
+            st.balloons() if is_qualified else None
+            st.success("E-Mail wurde kryptografisch signiert und im Postausgang hinterlegt.")
